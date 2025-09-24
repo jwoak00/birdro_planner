@@ -1,0 +1,57 @@
+<launch>
+
+  <arg name="freespace_planner_param_path" default="$(find-pkg-share autoware_launch)/config/planning/scenario_planning/parking/freespace_planner/freespace_planner.param.yaml"/>
+  <arg name="vehicle_info_param_file" default="$(find-pkg-share autoware_vehicle_info_utils)/config/vehicle_info.param.yaml"/>
+
+  <!-- Start No Driving Zone(NDZ) overlay so planner can subscribe to overlaid grid -->
+  <node pkg="birdro_planner" exec="ndz_costmap_overlay" name="ndz_costmap_overlay" output="screen">
+    <param name="input_topic" value="/planning/scenario_planning/parking/costmap_generator/occupancy_grid"/>
+    <param name="output_topic" value="/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz"/>
+    <param name="map_topic" value="/perception/occupancy_grid_map/map"/>
+    <param name="free_padding_margin_m" value="0.0"/>
+    <param name="ndz.enable" value="true"/>
+    <param name="ndz.osm_path" value="/home/ok/skyautonet_birdro/ros/src/skyautonet/launch/skyautonet_launch/skyautonet_launch/map/uv_land_v4.2/lanelet2_map.osm"/>
+    <param name="ndz.way_id" value="-10000"/>
+    <param name="ndz.ref_lat" value="0.0"/>
+    <param name="ndz.ref_lon" value="0.0"/>
+    <param name="ndz.offset_x_m" value="0.0"/>
+    <param name="ndz.offset_y_m" value="0.0"/>
+  </node>
+
+  <node pkg="birdro_planner" exec="birdro_planner_node" name="birdro_planner" output="screen" >
+    <!-- Consume NDZ overlaid occupancy grid so planner avoids NDZ -->
+    <remap from="~/input/occupancy_grid" to="/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz"/>
+    <remap from="~/input/odometry" to="/localization/kinematic_state"/>
+    <remap from="~/input/vector_map" to="/map/vector_map"/>
+    <remap from="~/output/trajectory" to="/planning/scenario_planning/parking/trajectory"/>
+
+    <param from="$(var freespace_planner_param_path)"/>
+    <param from="$(var vehicle_info_param_file)"/>
+    <param name="visualize_goal_marker" value="true"/>
+    <param name="use_occlusion_marker" value="false"/>
+    <param name="obstacle_replan_confirm_count" value="10"/>
+    <param name="obstacle_replan_min_interval_sec" value="3.0"/>
+    <param name="min_replan_progress_distance_m" value="2.0"/>
+    <param name="require_stop_before_planning" value="true"/> <!--true = 정지 후 경로 재생성, false = 주행 중 경로 재생성-->
+
+  <!-- Runtime speed/accel-based guard parameters -->
+  <param name="speed_guard.enable" value="true"/>
+  <param name="speed_guard.max_speed_mps" value="1.5"/> <!--5.0 / 3.6 = 1.38888-->
+  <param name="speed_guard.max_accel_mps2" value="2.5"/>
+  <param name="speed_guard.max_lateral_accel_mps2" value="4.0"/>
+  <param name="speed_guard.trigger_consecutive" value="1"/>
+  <param name="speed_guard.stop_duration_sec" value="2.0"/>
+  <param name="speed_guard.mode" value="1"/> <!--0: 정지 궤적 발행, 1: 마지막 정상 궤적 유지-->
+
+  <param name="ramp.enable" value="true"/>
+  <param name="ramp.max_accel_mps2" value="1.0"/>
+  <param name="ramp.max_decel_mps2" value="1.0"/>
+  <param name="ramp.reverse_gate.enable" value="true"/>
+  <param name="ramp.reverse_gate.speed_thresh_mps" value="0.3"/>
+  <param name="ramp.reverse_gate.stop_distance_m" value="0.5"/>
+  </node>
+
+
+</launch>
+
+<!-- launch-prefix="xterm -e gdb -ex=r args" -->
