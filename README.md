@@ -1,168 +1,243 @@
-# birdro_planner
+# BirdRo Planner
 
-birdro_planner는 Autoware freespace planner(A* / RRT*)를 사용해 주차·저속 환경에서 점-목표(goal)에 대한 궤적을 생성하는 ROS 2 패키지입니다. 추가로, OSM에 정의한 No Driving Zone(NDZ) 폴리곤을 점유 그리드에 오버레이하는 보조 노드(ndz_costmap_overlay)를 포함합니다.
+A ROS 2 package that provides free-space based path planning capabilities for autonomous vehicles, specifically designed for parking and low-speed maneuvering scenarios.
 
-- 플래너 노드: [`src/birdro_planner.cpp`](src/birdro_planner.cpp), [`include/birdro_planner.hpp`](include/birdro_planner.hpp)
-- NDZ 오버레이 노드: [`src/ndz_costmap_overlay.cpp`](src/ndz_costmap_overlay.cpp)
-- 런치 파일: [`launch/birdro_planner.launch.xml`](launch/birdro_planner.launch.xml)
+## Overview
 
-## 주요 기능
+BirdRo Planner is a sophisticated path planning system that uses occupancy grid maps to generate safe trajectories in free space. The package supports multiple planning algorithms and includes advanced features like speed control, obstacle avoidance, and No Driving Zone (NDZ) handling.
 
-- OccupancyGrid 기반 freespace 경로 계획 (A* 또는 RRT*)
-- NDZ(진입 금지 구역) 폴리곤 오버레이로 경로 생성 시 해당 영역 회피
-- 속도/가속/횡가속 실시간 가드(SpeedGuard)
-  - 모드 0: 안전정지 + 위치 얼림(freeze)
-  - 모드 1: 마지막 정상 궤적 유지
-- 방향 전환 구간 0속도 강제 및 가속/감속 램프 적용
-- 장애물/코스이탈에 따른 재계획 디바운싱과 쿨다운
+### Key Features
 
-## 빌드
+- **Multiple Planning Algorithms**: Supports both A* and RRT* algorithms for path planning
+- **Free-Space Planning**: Optimized for parking and low-speed maneuvering scenarios
+- **Speed Control**: Built-in speed ramping and acceleration limiting
+- **Obstacle Avoidance**: Real-time replanning when obstacles are detected
+- **No Driving Zone Support**: Integration with OSM-based restricted areas
+- **Safety Features**: Speed guard system with configurable limits
+- **ROS 2 Integration**: Full ROS 2 compatibility with standard message types
 
-- Linux + ROS 2 + Autoware Universe 환경을 가정합니다.
-- 의존: autoware.universe(freespace_planning_algorithms 등), tf2, visualization_msgs, tinyxml2, lanelet2, geography_utils, tier4_map_msgs 등.
+## Architecture
+
+The package consists of two main components:
+
+1. **BirdRo Planner Node** (`birdro_planner_node`): Main planning node that generates trajectories
+2. **NDZ Costmap Overlay** (`ndz_costmap_overlay`): Overlays No Driving Zones onto occupancy grids
+
+## Dependencies
+
+This package requires the following ROS 2 dependencies:
+
+- `rclcpp` - ROS 2 C++ client library
+- `rclcpp_components` - ROS 2 component system
+- `autoware_freespace_planning_algorithms` - Core planning algorithms
+- `autoware_planning_msgs` - Planning message definitions
+- `autoware_motion_utils` - Motion utilities
+- `autoware_universe_utils` - General utilities
+- `autoware_map_msgs` - Map message definitions
+- `autoware_lanelet2_extension` - Lanelet2 extensions
+- `tinyxml2_vendor` - XML parsing for OSM files
+- `tier4_map_msgs` - Map projection messages
+- `geography_utils` - Geographic utilities
+- `lanelet2_*` - Lanelet2 mapping framework
+
+## Installation
+
+### Prerequisites
+
+Ensure you have ROS 2 and the required dependencies installed:
 
 ```bash
-# 워크스페이스 루트(예: /home/ok/skyautonet_birdro/ros)에서
+# Install ROS 2 (Humble/Iron/Rolling)
+# Follow official ROS 2 installation guide
+
+# Install dependencies using rosdep
+rosdep install --from-paths . --ignore-src -r -y
+```
+
+### Building
+
+```bash
+# In your ROS 2 workspace
 colcon build --packages-select birdro_planner
+
+# Source the workspace
 source install/setup.bash
 ```
 
-## 실행
+## Usage
 
-런치 파일(플래너 + NDZ 오버레이 동시 실행)을 권장합니다.
+### Basic Launch
+
+Launch the complete planner system:
 
 ```bash
 ros2 launch birdro_planner birdro_planner.launch.xml
 ```
 
-- 플래너는 NDZ가 반영된 그리드로 자동 리맵됩니다.
-- Autoware freespace planner 파라미터/차량 파라미터 파일 경로는 런치 인자를 통해 설정됩니다.
+### Individual Nodes
 
-단일 노드로 실행하려면:
+Launch individual components:
 
 ```bash
-# NDZ 오버레이
-ros2 run birdro_planner ndz_costmap_overlay --ros-args \
-  -p input_topic:=/planning/scenario_planning/parking/costmap_generator/occupancy_grid \
-  -p output_topic:=/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz \
-  -p map_topic:=/perception/occupancy_grid_map/map \
-  -p ndz.enable:=true \
-  -p ndz.osm_path:=/path/to/lanelet2_map.osm \
-  -p ndz.way_id:=-10000
+# Main planner node
+ros2 run birdro_planner birdro_planner_node
 
-# 플래너
-ros2 run birdro_planner birdro_planner_node --ros-args \
-  --remap ~/input/occupancy_grid:=/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz \
-  --remap ~/input/odometry:=/localization/kinematic_state \
-  --remap ~/input/vector_map:=/map/vector_map \
-  --remap ~/output/trajectory:=/planning/scenario_planning/parking/trajectory
+# NDZ costmap overlay
+ros2 run birdro_planner ndz_costmap_overlay
 ```
 
-참고: 제공 런치 파일은 위 리맵/파라미터를 이미 포함합니다. 파일 참조: [`launch/birdro_planner.launch.xml`](launch/birdro_planner.launch.xml)
+## Configuration
 
-## 토픽 I/O
+### Planning Parameters
 
-### birdro_planner_node
-- Subscriptions
-  - `~/input/route` (autoware_planning_msgs/LaneletRoute, transient_local)
-  - `~/input/occupancy_grid` (nav_msgs/OccupancyGrid)
-  - `~/input/odometry` (nav_msgs/Odometry)
-  - `/planning/mission_planning/checkpoint` (geometry_msgs/PoseStamped, 목표)
-  - `/initialpose` (geometry_msgs/PoseWithCovarianceStamped)
-- Publications
-  - `~/output/trajectory` (autoware_planning_msgs/Trajectory)
-  - 선택: `/planning/scenario_planning/lane_driving/trajectory` (mirror, `mirror_to_main_trajectory:=true`일 때)
-  - `/planning/scenario_planning/parking/is_completed` (std_msgs/Bool)
-  - `~/debug/pose_array`, `~/debug/partial_pose_array` (geometry_msgs/PoseArray)
-  - `~/debug/goal_marker`, `~/debug/occlusion_zone` (visualization_msgs/Marker)
+Key configuration parameters for the planner:
 
-### ndz_costmap_overlay
-- Subscriptions
-  - `input_topic` (nav_msgs/OccupancyGrid, 동적/로컬 코스트맵)
-  - `map_topic` (nav_msgs/OccupancyGrid, 정적 맵, 선택)
-  - `/map/map_projector_info` (tier4_map_msgs/MapProjectorInfo, transient_local)
-- Publications
-  - `output_topic` (nav_msgs/OccupancyGrid, NDZ 반영)
-  - `~/ndz_polygon` (visualization_msgs/Marker)
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `algorithm_name` | "astar" | Planning algorithm ("astar" or "rrtstar") |
+| `cruise_velocity` | 1.39 m/s | Default cruise velocity |
+| `update_rate` | 10.0 Hz | Planning update frequency |
+| `th_arrived_distance_m` | 1.0 m | Distance threshold for goal arrival |
+| `obstacle_threshold` | 100 | Occupancy grid threshold for obstacles |
+| `time_limit` | 30000.0 ms | Maximum planning time |
 
-## 주요 파라미터
+### Speed Control Parameters
 
-### 플래너 노드(birdro_planner_node)
-- `algorithm_name` ["astar" | "rrtstar"] (기본 "astar")
-- `cruise_velocity` [m/s] (기본 5.0/3.6)
-- `update_rate` [Hz] (기본 10.0)
-- 도착/정지 판정: `th_arrived_distance_m`, `th_stopped_time_sec`, `th_stopped_velocity_mps`
-- 코스 이탈/재계획: `th_course_out_distance_m`, `course_out.publish_margin_m`, `course_out.replan_min_interval_sec`, `course_out.publish_epsilon_m`
-- 장애물 재계획: `replan_when_obstacle_found`, `obstacle_detect_confirm_count`, `obstacle_replan_min_interval_sec`, `min_replan_progress_distance_m`
-- 정지 후 계획 여부: `require_stop_before_planning` (true면 정지 후 계획)
-- 차체 여유: `vehicle_shape_margin_m`
-- 목표 마커: `visualize_goal_marker`
-- 미러 퍼블리시: `mirror_to_main_trajectory` (lane_driving/trajectory로 사본 발행)
-- 속도 램프:
-  - `ramp.enable`, `ramp.max_accel_mps2`, `ramp.max_decel_mps2`
-  - `ramp.reverse_gate.enable`, `ramp.reverse_gate.speed_thresh_mps`, `ramp.reverse_gate.stop_distance_m`
-- SpeedGuard:
-  - `speed_guard.enable`, `speed_guard.max_speed_mps`, `speed_guard.max_accel_mps2`, `speed_guard.max_lateral_accel_mps2`
-  - `speed_guard.trigger_consecutive`, `speed_guard.stop_duration_sec`, `speed_guard.mode` (0=정지/프리즈, 1=마지막 정상 궤적 유지)
+Configure speed limits and acceleration:
 
-상세 구현은 [`src/birdro_planner.cpp`](src/birdro_planner.cpp), [`include/birdro_planner.hpp`](include/birdro_planner.hpp) 참고.
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `speed_guard.enable` | true | Enable speed guard system |
+| `speed_guard.max_speed_mps` | 1.5 m/s | Maximum allowed speed |
+| `speed_guard.max_accel_mps2` | 2.5 m/s² | Maximum acceleration |
+| `ramp.max_accel_mps2` | 1.0 m/s² | Speed ramp acceleration limit |
+| `ramp.max_decel_mps2` | 1.0 m/s² | Speed ramp deceleration limit |
 
-### NDZ 오버레이(ndz_costmap_overlay)
-- I/O
-  - `input_topic` (기본 `/planning/scenario_planning/parking/costmap_generator/occupancy_grid`)
-  - `output_topic` (기본 `/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz`)
-  - `map_topic` (기본 `/perception/occupancy_grid_map/map`)
-  - `free_padding_margin_m` [m] (그리드 경계 외부로 free padding 확장)
-- NDZ 정의
-  - `ndz.enable` (기본 true)
-  - `ndz.osm_path` (lanelet2 OSM 파일 경로)
-  - `ndz.way_id` (폴리곤을 구성하는 OSM way ID)
-  - `ndz.ref_lat`, `ndz.ref_lon` (나이브 투영시 기준점)
-  - `ndz.offset_x_m`, `ndz.offset_y_m` (오프셋)
+### NDZ (No Driving Zone) Parameters
 
-동작 요약: OSM에서 way의 노드들을 읽어 폴리곤 생성 → `/map/map_projector_info`로부터 projector를 수신해 동일 투영계로 좌표 변환 → 현재 OccupancyGrid 메타(해상도/원점/회전)에 맞춰 마스크 생성 → NDZ 내부 셀을 점유(100)로 승격 → 원본(-1) 셀은 Free(0)로 변환하여 goal 유효성 문제 방지 → 동적/정적 그리드를 max 합성 → 필요 시 free padding으로 경계 확장. 구현: [`src/ndz_costmap_overlay.cpp`](src/ndz_costmap_overlay.cpp)
+Configure restricted areas:
 
-## NDZ OSM 작성 가이드
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ndz.enable` | true | Enable NDZ processing |
+| `ndz.osm_path` | "" | Path to OSM file with NDZ data |
+| `ndz.way_id` | -10000 | OSM way ID for NDZ polygon |
 
-- NDZ 폴리곤을 구성할 OSM way를 선택/생성하고 해당 `way_id`를 파라미터로 지정합니다.
-- 맵 projector가 `LOCAL`인 경우, 각 노드에 `local_x`/`local_y` 태그가 있으면 이를 우선 사용합니다. 태그가 없으면 ref_lat/lon 기반 나이브 투영으로 폴리곤을 구성합니다.
-- projector 타입/원점은 `/map/map_projector_info`에서 수신합니다. 메시지 정의는 Autoware Universe의 tier4_map_msgs 참고.
+## Topics
 
-RViz에서 `~/ndz_polygon` 마커로 폴리곤을 확인할 수 있습니다.
+### Subscribed Topics
 
-## 예시 파라미터/런치
+- `/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz` - Occupancy grid with NDZ overlay
+- `/localization/kinematic_state` - Vehicle odometry
+- `/map/vector_map` - Vector map data
+- `/planning/mission_planning/goal` - Goal pose
 
-런치 파일: [`launch/birdro_planner.launch.xml`](launch/birdro_planner.launch.xml)
+### Published Topics
 
-핵심 부분:
-```xml
-<node pkg="birdro_planner" exec="ndz_costmap_overlay" name="ndz_costmap_overlay">
-  <param name="input_topic" value="/planning/scenario_planning/parking/costmap_generator/occupancy_grid"/>
-  <param name="output_topic" value="/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz"/>
-  <param name="map_topic" value="/perception/occupancy_grid_map/map"/>
-  <param name="ndz.enable" value="true"/>
-  <param name="ndz.osm_path" value="/path/to/lanelet2_map.osm"/>
-  <param name="ndz.way_id" value="-10000"/>
-</node>
+- `/planning/scenario_planning/parking/trajectory` - Generated trajectory
+- `/planning/scenario_planning/parking/is_completed` - Planning completion status
+- Various debug and visualization topics
 
-<node pkg="birdro_planner" exec="birdro_planner_node" name="birdro_planner">
-  <remap from="~/input/occupancy_grid" to="/planning/scenario_planning/parking/costmap_generator/occupancy_grid_ndz"/>
-  <remap from="~/input/odometry" to="/localization/kinematic_state"/>
-  <remap from="~/input/vector_map" to="/map/vector_map"/>
-  <remap from="~/output/trajectory" to="/planning/scenario_planning/parking/trajectory"/>
-  <param name="visualize_goal_marker" value="true"/>
-  <param name="use_occlusion_marker" value="false"/>
-  <param name="require_stop_before_planning" value="true"/>
-  <!-- SpeedGuard/Ramp 파라미터 등 추가 가능 -->
-</node>
+## Algorithm Details
+
+### A* Planning
+- Grid-based search with configurable resolution
+- Supports forward/reverse driving
+- Considers vehicle kinematics and turning constraints
+
+### RRT* Planning
+- Sampling-based planning for complex scenarios
+- Asymptotically optimal solutions
+- Better performance in high-dimensional spaces
+
+### Speed Profile Generation
+- Acceleration/deceleration limiting
+- Smooth velocity transitions
+- Reverse gate functionality for direction changes
+
+## Safety Features
+
+### Speed Guard System
+- Real-time speed and acceleration monitoring
+- Automatic trajectory modification for safety
+- Configurable violation thresholds and responses
+
+### Obstacle Detection and Replanning
+- Continuous monitoring of the planned path
+- Automatic replanning when obstacles are detected
+- Debouncing to prevent excessive replanning
+
+## Development
+
+### Code Structure
+
+```
+├── include/
+│   └── birdro_planner.hpp          # Main planner class definition
+├── src/
+│   ├── birdro_planner.cpp          # Main planner implementation
+│   └── ndz_costmap_overlay.cpp     # NDZ overlay implementation
+├── launch/
+│   └── birdro_planner.launch.xml   # Launch configuration
+├── CMakeLists.txt                  # Build configuration
+└── package.xml                     # Package metadata
 ```
 
-## 동작 팁
+### Building for Development
 
-- TF 변환 실패 시 플래너가 계획을 중단합니다. OccupancyGrid/odometry/goal의 frame_id와 TF를 확인하세요.
-- NDZ가 의도와 다르게 보이면 projector 정보(`/map/map_projector_info`)와 OSM local_x/local_y 태그를 점검하세요.
-- SpeedGuard 위반 시 안전정지/프리즈가 발생합니다. 파라미터로 임계값 및 동작 모드를 조정하세요.
-- Unknown(-1) 셀은 Free(0)로 변환됩니다. 맵 생성 파이프라인에서 Unknown을 사용하는 경우 이 특성을 고려하세요.
+```bash
+# Build with debug symbols
+colcon build --packages-select birdro_planner --cmake-args -DCMAKE_BUILD_TYPE=Debug
 
-## 라이선스
-본 패키지의 라이선스는 상위 리포지터리 정책을 따릅니다.
+# Run tests (if available)
+colcon test --packages-select birdro_planner
+```
+
+## Examples
+
+### Setting a Goal Pose
+
+```bash
+# Publish a goal pose
+ros2 topic pub /planning/mission_planning/goal geometry_msgs/msg/PoseStamped '{
+  header: {frame_id: "map"},
+  pose: {
+    position: {x: 10.0, y: 5.0, z: 0.0},
+    orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  }
+}'
+```
+
+### Monitoring Planning Status
+
+```bash
+# Monitor trajectory output
+ros2 topic echo /planning/scenario_planning/parking/trajectory
+
+# Check completion status
+ros2 topic echo /planning/scenario_planning/parking/is_completed
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **No trajectory generated**: Check occupancy grid input and goal pose validity
+2. **Planning timeout**: Increase `time_limit` parameter or simplify the scenario
+3. **Excessive replanning**: Adjust `obstacle_replan_confirm_count` and interval parameters
+4. **Speed violations**: Review speed guard parameters and vehicle dynamics
+
+### Debug Topics
+
+Enable debug visualization:
+- Set `visualize_goal_marker: true` for goal visualization
+- Set `use_occlusion_marker: true` for occlusion debugging
+
+## License
+
+The license for this package follows the policy of the parent repository.
+
+## Contributing
+
+Please follow the existing code style and ensure all changes are tested before submitting pull requests.
+
